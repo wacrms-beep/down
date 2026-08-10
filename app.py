@@ -419,6 +419,15 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def root():
+    return {
+        "service": "Velox API",
+        "docs": "/docs",
+        "status": "/status",
+    }
+
+
 @app.get("/status")
 def get_status():
     ok = bool(shutil.which(store.ytdlp_path) or os.path.isfile(store.ytdlp_path))
