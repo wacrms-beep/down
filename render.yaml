@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: velox-api
+    runtime: docker
+    plan: starter
+    healthCheckPath: /status
+    disk:
+      name: velox-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: VELOX_DATA_DIR
+        value: /data
