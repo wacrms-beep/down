@@ -11,6 +11,16 @@ Lancer :
     uvicorn app:app --host 0.0.0.0 --port 8000
 
 Doc interactive une fois lancé : http://localhost:8000/docs
+
+Cookies :
+    Le serveur n'a pas de navigateur local (--cookies-from-browser est donc
+    inutilisable en prod). Place un fichier `cookies.txt` (format Netscape,
+    exporté par une extension type "Get cookies.txt LOCALLY") dans le
+    dossier VELOX_DATA_DIR (ou configure VELOX_COOKIES_FILE avec un chemin
+    précis). Il sera utilisé automatiquement par tous les endpoints de
+    téléchargement si aucun `cookies` n'est fourni dans la requête.
+    NE JAMAIS committer ce fichier dans git (ajoute-le à .gitignore) : il
+    contient des jetons de session valides.
 """
 
 import glob
@@ -139,12 +149,14 @@ def build_cmd(ytdlp_path, url, quality, fmt, browser, cookies, out_tmpl,
 
 
 def build_audio_cmd(ytdlp_path, url, fmt, quality, folder=None,
-                     thumb=False, meta=False, split_chapters=False):
+                     thumb=False, meta=False, split_chapters=False, cookies=None):
     tmpl = os.path.join(folder, "%(title)s.%(ext)s") if folder else "%(title)s.%(ext)s"
     cmd = [ytdlp_path, url, "-x", "--audio-format", fmt.lower(),
            "--newline", "--progress", "-o", tmpl]
     if quality != "Best":
         cmd += ["--audio-quality", f"{quality}k"]
+    if cookies:
+        cmd += ["--cookies", cookies]
     if thumb:
         cmd += ["--embed-thumbnail"]
     if meta:
@@ -157,7 +169,7 @@ def build_audio_cmd(ytdlp_path, url, fmt, quality, folder=None,
 def build_playlist_cmd(ytdlp_path, url, mode, num_tmpl, folder=None, speed=None,
                         subs=False, thumb=False, meta=False,
                         quality="Best available", fmt="Auto", browser="None",
-                        a_fmt="MP3", a_quality="Best"):
+                        a_fmt="MP3", a_quality="Best", cookies=None):
     if mode == "video":
         ext = F_MAP.get(fmt, "")
         tmpl = f"{num_tmpl}.{'%(ext)s' if not ext else ext}"
@@ -179,6 +191,8 @@ def build_playlist_cmd(ytdlp_path, url, mode, num_tmpl, folder=None, speed=None,
         if a_quality != "Best":
             cmd += ["--audio-quality", f"{a_quality}k"]
 
+    if cookies:
+        cmd += ["--cookies", cookies]
     if speed:
         cmd += ["--limit-rate", speed]
     if subs and mode == "video":
@@ -198,6 +212,70 @@ def build_playlist_cmd(ytdlp_path, url, mode, num_tmpl, folder=None, speed=None,
 DATA_DIR = os.environ.get("VELOX_DATA_DIR", os.path.expanduser("~"))
 DOWNLOADS_DIR = os.path.join(DATA_DIR, "downloads")
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  COOKIES — fichier Netscape (cookies.txt) partagé par défaut
+# ─────────────────────────────────────────────────────────────────────────────
+# Cookie embarqué directement dans le code (à la demande). yt-dlp attend un
+# chemin de fichier pour --cookies : on écrit donc ce contenu sur disque une
+# fois au démarrage, puis on réutilise ce chemin.
+EMBEDDED_COOKIES_TXT = """# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.pornhub.com\tTRUE\t/\tTRUE\t1816368682\tss\t591934820168317375
+.pornhub.com\tTRUE\t/\tTRUE\t1816368682\tsessid\t579564516745917703
+.pornhub.com\tTRUE\t/\tTRUE\t1787424682\tcomp_detect-cookies\t35652.100000
+.pornhub.com\tTRUE\t/\tTRUE\t1816389608\t__l\t6A6262A8-42FE722901BB76655-DC9A11
+.pornhub.com\tTRUE\t/\tTRUE\t1787424684\tfg_afaf12e314c5419a855ddc0bf120670f\t91670.100000
+.pornhub.com\tTRUE\t/\tTRUE\t1787424684\tfg_43cd950e43067a4ecc8c7ba3d887ff26\t7507.100000
+.pornhub.com\tTRUE\t/\tTRUE\t1787424684\tfg_55e3b6f0afd46366d6fa797544b15af2\t42024.100000
+.pornhub.com\tTRUE\t/\tTRUE\t1787424684\tfg_7d31324eedb583147b6dcbea0051c868\t30586.100000
+.pornhub.com\tTRUE\t/\tTRUE\t1816368685\tcookieConsent\t3
+.pornhub.com\tTRUE\t/\tFALSE\t1820963459\t_ga\tGA1.1.610206280.1784832730
+.pornhub.com\tTRUE\t/\tTRUE\t1816368781\tbsdd\t02e7c8a4c03603c7a6fab8fba30c9fbc
+.pornhub.com\tTRUE\t/\tTRUE\t1787424782\tcomp_mandatory-dob-existing-user\t99684.100000
+.pornhub.com\tTRUE\t/\tTRUE\t1816406034\tlvv\t198137615222471655
+.pornhub.com\tTRUE\t/\tTRUE\t1816406034\tvlc\t601847635441355279
+.pornhub.com\tTRUE\t/\tTRUE\t1787462239\tfg_439f2555043a44b8bd91161b5deddd29\t16009.100000
+.pornhub.com\tTRUE\t/\tTRUE\t1786489813\tua\t6967ec7261b3cbe6a91d798c6b951c60
+.pornhub.com\tTRUE\t/\tTRUE\t1787008213\tplatform\tpc
+.pornhub.com\tTRUE\t/\tTRUE\t0\t__s\t6A7A5A55-42FE722901BB18AA3B-3118FE0
+.pornhub.com\tTRUE\t/\tTRUE\t1788995414\tfg_41b1995ee5530001895f2da326e410dd\t9134.100000
+.pornhub.com\tTRUE\t/\tFALSE\t1786407020\taccessAgeDisclaimerPH\t2
+.pornhub.com\tTRUE\t/\tFALSE\t1801955456\tg_state\t{"i_l":0,"i_ll":1786403450357,"i_e":{"enable_itp_optimization":24},"i_et":1786403450357}
+.pornhub.com\tTRUE\t/\tTRUE\t1802214657\til\tv1gXouIblCkjQMkCMhXexFbz8115-XPYfAvNVKVWG59zsxODAyMjE0NjU3REJNNTg1R2hWMWUyN2F5bk9tTUh3c0o0aGZENGpPUDF2YWVYSTJPOQ..
+.pornhub.com\tTRUE\t/\tTRUE\t1817939457\tbs\t02e7c8a4c03603c7a6fab8fba30c9fbc
+.pornhub.com\tTRUE\t/\tFALSE\t1820963459\t_ga_B39RFFWGYY\tGS2.1.s1786403436$o4$g1$t1786403459$j37$l0$h0
+fr.pornhub.com\tFALSE\t/\tFALSE\t0\trp\t4203231596:ApoyNCNk2ew=
+"""
+
+DEFAULT_COOKIES_FILE = os.environ.get(
+    "VELOX_COOKIES_FILE", os.path.join(DATA_DIR, "cookies.txt")
+)
+
+
+def _ensure_embedded_cookies_written():
+    """Écrit le cookie embarqué sur disque au démarrage si le fichier n'existe
+    pas déjà (ou est plus ancien que ce qui est codé en dur)."""
+    try:
+        with open(DEFAULT_COOKIES_FILE, "w") as f:
+            f.write(EMBEDDED_COOKIES_TXT)
+    except Exception:
+        pass
+
+
+_ensure_embedded_cookies_written()
+
+
+def resolve_cookies(explicit: Optional[str]) -> Optional[str]:
+    """Renvoie le chemin de cookies à utiliser : celui fourni dans la requête
+    en priorité, sinon le fichier par défaut (généré depuis EMBEDDED_COOKIES_TXT)."""
+    if explicit and explicit.strip():
+        return explicit.strip()
+    if os.path.isfile(DEFAULT_COOKIES_FILE):
+        return DEFAULT_COOKIES_FILE
+    return None
 
 
 class Store:
@@ -373,6 +451,7 @@ class BatchRequest(BaseModel):
     quality: str = "Best available"
     format: str = "Auto"
     browser: str = "None"
+    cookies: Optional[str] = None
     output_folder: Optional[str] = None
     output_template: str = "%(autonumber)s - %(title)s.%(ext)s"
     subtitles: bool = False
@@ -384,6 +463,7 @@ class AudioRequest(BaseModel):
     url: str
     format: str = "MP3"
     quality: str = "Best"
+    cookies: Optional[str] = None
     output_folder: Optional[str] = None
     embed_thumbnail: bool = False
     embed_metadata: bool = False
@@ -396,6 +476,7 @@ class PlaylistRequest(BaseModel):
     quality: str = "Best available"
     format: str = "Auto"
     browser: str = "None"
+    cookies: Optional[str] = None
     audio_format: str = "MP3"
     audio_quality: str = "Best"
     output_folder: Optional[str] = None
@@ -451,7 +532,7 @@ def download(req: DownloadRequest):
     out_tmpl = os.path.join(DOWNLOADS_DIR, out_tmpl)
     cmd = build_cmd(
         store.ytdlp_path, req.url, req.quality, req.format, req.browser,
-        req.cookies, out_tmpl, req.speed_limit,
+        resolve_cookies(req.cookies), out_tmpl, req.speed_limit,
         subs=req.subtitles, thumb=req.embed_thumbnail, meta=req.embed_metadata,
         chapters=req.chapters, no_playlist=not req.playlist,
     )
@@ -466,9 +547,10 @@ def batch(req: BatchRequest):
     if not urls:
         raise HTTPException(400, "Aucune URL fournie")
     folder = req.output_folder or DOWNLOADS_DIR
+    cookies = resolve_cookies(req.cookies)
     url_cmds = [
         (u, build_cmd(
-            store.ytdlp_path, u, req.quality, req.format, req.browser, "",
+            store.ytdlp_path, u, req.quality, req.format, req.browser, cookies,
             req.output_template, folder=folder,
             subs=req.subtitles, thumb=req.embed_thumbnail, meta=req.embed_metadata,
             no_playlist=False,
@@ -488,6 +570,7 @@ def audio(req: AudioRequest):
         store.ytdlp_path, req.url, req.format, req.quality,
         req.output_folder or DOWNLOADS_DIR,
         thumb=req.embed_thumbnail, meta=req.embed_metadata, split_chapters=req.split_chapters,
+        cookies=resolve_cookies(req.cookies),
     )
     job = start_job("audio", req.url, cmd)
     return {"job_id": job.id}
@@ -499,9 +582,13 @@ def playlist_info(url: str):
     if not url.strip():
         raise HTTPException(400, "URL requise")
     try:
+        cmd = [store.ytdlp_path, "--flat-playlist", "--dump-single-json", "--no-warnings"]
+        cookies = resolve_cookies(None)
+        if cookies:
+            cmd += ["--cookies", cookies]
+        cmd.append(url)
         proc = subprocess.Popen(
-            [store.ytdlp_path, "--flat-playlist", "--dump-single-json", "--no-warnings", url],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             universal_newlines=True, creationflags=_no_window(),
         )
         out, err = proc.communicate()
@@ -525,6 +612,7 @@ def playlist(req: PlaylistRequest):
         subs=req.subtitles, thumb=req.embed_thumbnail, meta=req.embed_metadata,
         quality=req.quality, fmt=req.format, browser=req.browser,
         a_fmt=req.audio_format, a_quality=req.audio_quality,
+        cookies=resolve_cookies(req.cookies),
     )
     job = start_job("playlist", req.url, cmd)
     return {"job_id": job.id}
@@ -585,6 +673,15 @@ def set_path(req: SettingsPathRequest):
     store.ytdlp_path = req.path
     store.save()
     return get_status()
+
+
+@app.get("/settings/cookies")
+def get_cookies_status():
+    """Indique si un fichier cookies.txt par défaut est présent côté serveur,
+    sans jamais exposer son contenu."""
+    exists = os.path.isfile(DEFAULT_COOKIES_FILE)
+    size = os.path.getsize(DEFAULT_COOKIES_FILE) if exists else 0
+    return {"path": DEFAULT_COOKIES_FILE, "present": exists, "size_bytes": size}
 
 
 @app.post("/settings/update")
