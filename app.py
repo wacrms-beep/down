@@ -118,7 +118,7 @@ B_MAP = {
 
 def build_cmd(ytdlp_path, url, quality, fmt, browser, cookies, out_tmpl,
               speed=None, subs=False, thumb=False, meta=False, chapters=False,
-              no_playlist=True, folder=None):
+              no_playlist=True, folder=None, proxy=None):
     cmd = [ytdlp_path, url, "-f", Q_MAP.get(quality, "bestvideo+bestaudio/best"),
            "--newline", "--progress"]
     f = F_MAP.get(fmt)
@@ -133,6 +133,8 @@ def build_cmd(ytdlp_path, url, quality, fmt, browser, cookies, out_tmpl,
         cmd += ["--cookies-from-browser", b]
     if cookies:
         cmd += ["--cookies", cookies]
+    if proxy:
+        cmd += ["--proxy", proxy]
     if speed:
         cmd += ["--limit-rate", speed]
     if subs:
@@ -149,7 +151,8 @@ def build_cmd(ytdlp_path, url, quality, fmt, browser, cookies, out_tmpl,
 
 
 def build_audio_cmd(ytdlp_path, url, fmt, quality, folder=None,
-                     thumb=False, meta=False, split_chapters=False, cookies=None):
+                     thumb=False, meta=False, split_chapters=False, cookies=None,
+                     proxy=None):
     tmpl = os.path.join(folder, "%(title)s.%(ext)s") if folder else "%(title)s.%(ext)s"
     cmd = [ytdlp_path, url, "-x", "--audio-format", fmt.lower(),
            "--newline", "--progress", "-o", tmpl]
@@ -157,6 +160,8 @@ def build_audio_cmd(ytdlp_path, url, fmt, quality, folder=None,
         cmd += ["--audio-quality", f"{quality}k"]
     if cookies:
         cmd += ["--cookies", cookies]
+    if proxy:
+        cmd += ["--proxy", proxy]
     if thumb:
         cmd += ["--embed-thumbnail"]
     if meta:
@@ -169,7 +174,7 @@ def build_audio_cmd(ytdlp_path, url, fmt, quality, folder=None,
 def build_playlist_cmd(ytdlp_path, url, mode, num_tmpl, folder=None, speed=None,
                         subs=False, thumb=False, meta=False,
                         quality="Best available", fmt="Auto", browser="None",
-                        a_fmt="MP3", a_quality="Best", cookies=None):
+                        a_fmt="MP3", a_quality="Best", cookies=None, proxy=None):
     if mode == "video":
         ext = F_MAP.get(fmt, "")
         tmpl = f"{num_tmpl}.{'%(ext)s' if not ext else ext}"
@@ -193,6 +198,8 @@ def build_playlist_cmd(ytdlp_path, url, mode, num_tmpl, folder=None, speed=None,
 
     if cookies:
         cmd += ["--cookies", cookies]
+    if proxy:
+        cmd += ["--proxy", proxy]
     if speed:
         cmd += ["--limit-rate", speed]
     if subs and mode == "video":
@@ -266,6 +273,20 @@ def _ensure_embedded_cookies_written():
 
 
 _ensure_embedded_cookies_written()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PROXY — pour contourner les 403 liés à l'IP datacenter (Render, etc.)
+# Configure via variable d'env VELOX_PROXY sur Render, ex:
+#   http://user:password@proxy-host:port
+# ─────────────────────────────────────────────────────────────────────────────
+DEFAULT_PROXY = os.environ.get("VELOX_PROXY", "").strip() or None
+
+
+def resolve_proxy(explicit: Optional[str]) -> Optional[str]:
+    if explicit and explicit.strip():
+        return explicit.strip()
+    return DEFAULT_PROXY
 
 
 def resolve_cookies(explicit: Optional[str]) -> Optional[str]:
@@ -437,6 +458,7 @@ class DownloadRequest(BaseModel):
     format: str = "Auto"
     browser: str = "None"
     cookies: Optional[str] = None
+    proxy: Optional[str] = None
     output: Optional[str] = None
     speed_limit: Optional[str] = None
     subtitles: bool = False
@@ -452,6 +474,7 @@ class BatchRequest(BaseModel):
     format: str = "Auto"
     browser: str = "None"
     cookies: Optional[str] = None
+    proxy: Optional[str] = None
     output_folder: Optional[str] = None
     output_template: str = "%(autonumber)s - %(title)s.%(ext)s"
     subtitles: bool = False
@@ -464,6 +487,7 @@ class AudioRequest(BaseModel):
     format: str = "MP3"
     quality: str = "Best"
     cookies: Optional[str] = None
+    proxy: Optional[str] = None
     output_folder: Optional[str] = None
     embed_thumbnail: bool = False
     embed_metadata: bool = False
@@ -477,6 +501,7 @@ class PlaylistRequest(BaseModel):
     format: str = "Auto"
     browser: str = "None"
     cookies: Optional[str] = None
+    proxy: Optional[str] = None
     audio_format: str = "MP3"
     audio_quality: str = "Best"
     output_folder: Optional[str] = None
@@ -535,6 +560,7 @@ def download(req: DownloadRequest):
         resolve_cookies(req.cookies), out_tmpl, req.speed_limit,
         subs=req.subtitles, thumb=req.embed_thumbnail, meta=req.embed_metadata,
         chapters=req.chapters, no_playlist=not req.playlist,
+        proxy=resolve_proxy(req.proxy),
     )
     job = start_job("single", req.url, cmd)
     return {"job_id": job.id}
@@ -548,12 +574,13 @@ def batch(req: BatchRequest):
         raise HTTPException(400, "Aucune URL fournie")
     folder = req.output_folder or DOWNLOADS_DIR
     cookies = resolve_cookies(req.cookies)
+    proxy = resolve_proxy(req.proxy)
     url_cmds = [
         (u, build_cmd(
             store.ytdlp_path, u, req.quality, req.format, req.browser, cookies,
             req.output_template, folder=folder,
             subs=req.subtitles, thumb=req.embed_thumbnail, meta=req.embed_metadata,
-            no_playlist=False,
+            no_playlist=False, proxy=proxy,
         ))
         for u in urls
     ]
@@ -570,7 +597,7 @@ def audio(req: AudioRequest):
         store.ytdlp_path, req.url, req.format, req.quality,
         req.output_folder or DOWNLOADS_DIR,
         thumb=req.embed_thumbnail, meta=req.embed_metadata, split_chapters=req.split_chapters,
-        cookies=resolve_cookies(req.cookies),
+        cookies=resolve_cookies(req.cookies), proxy=resolve_proxy(req.proxy),
     )
     job = start_job("audio", req.url, cmd)
     return {"job_id": job.id}
@@ -586,6 +613,9 @@ def playlist_info(url: str):
         cookies = resolve_cookies(None)
         if cookies:
             cmd += ["--cookies", cookies]
+        proxy = resolve_proxy(None)
+        if proxy:
+            cmd += ["--proxy", proxy]
         cmd.append(url)
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -612,7 +642,7 @@ def playlist(req: PlaylistRequest):
         subs=req.subtitles, thumb=req.embed_thumbnail, meta=req.embed_metadata,
         quality=req.quality, fmt=req.format, browser=req.browser,
         a_fmt=req.audio_format, a_quality=req.audio_quality,
-        cookies=resolve_cookies(req.cookies),
+        cookies=resolve_cookies(req.cookies), proxy=resolve_proxy(req.proxy),
     )
     job = start_job("playlist", req.url, cmd)
     return {"job_id": job.id}
@@ -682,6 +712,16 @@ def get_cookies_status():
     exists = os.path.isfile(DEFAULT_COOKIES_FILE)
     size = os.path.getsize(DEFAULT_COOKIES_FILE) if exists else 0
     return {"path": DEFAULT_COOKIES_FILE, "present": exists, "size_bytes": size}
+
+
+@app.get("/settings/proxy")
+def get_proxy_status():
+    """Indique si un proxy par défaut est configuré (VELOX_PROXY), sans
+    exposer les identifiants qu'il contient."""
+    if not DEFAULT_PROXY:
+        return {"configured": False}
+    masked = re.sub(r"://[^@]+@", "://***:***@", DEFAULT_PROXY)
+    return {"configured": True, "proxy": masked}
 
 
 @app.post("/settings/update")
